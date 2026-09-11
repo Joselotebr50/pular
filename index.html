@@ -1831,4 +1831,309 @@ function desenharFim(){
 
   ctx.fillStyle='#ff8a8a';
   ctx.font=`bold ${Math.min(54*ESCALA, LARGURA*0.07)}px system-ui, sans-serif`;
-  ctx.fillText
+  ctx.fillText('FIM DE JOGO',LARGURA/2,ALTURA*0.20);
+
+  ctx.fillStyle='#fff';
+  ctx.font=`bold ${34*ESCALA}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.fillText('PONTOS: '+estado.pontos,LARGURA/2,ALTURA*0.34);
+
+  ctx.fillStyle='#fbbf24';
+  ctx.font=`bold ${18*ESCALA}px system-ui, sans-serif`;
+  ctx.fillText('🪙 Moedas coletadas: '+estado.moedasRun,LARGURA/2,ALTURA*0.42);
+
+  ctx.fillStyle='rgba(255,255,255,0.9)';
+  ctx.font=`bold ${18*ESCALA}px system-ui, sans-serif`;
+  const txt=isBossPhase()?'Chegou ao CHEFE':('Fase '+(estado.faseIdx+1)+' — '+FASES[estado.faseIdx].nome);
+  ctx.fillText(txt+(estado.ciclo>0?'  (Ciclo '+(estado.ciclo+1)+')':''),LARGURA/2,ALTURA*0.50);
+
+  ctx.fillStyle='rgba(255,255,255,0.75)';
+  ctx.font=`bold ${16*ESCALA}px system-ui, sans-serif`;
+  ctx.fillText('RECORDE: '+recorde,LARGURA/2,ALTURA*0.57);
+
+  if(estado.tempoFim>30){
+    const a=.5+.5*Math.sin(estado.frame*.1);
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#ffe066';
+    ctx.font=`bold ${20*ESCALA}px system-ui, sans-serif`;
+    ctx.fillText(isTouch?'TOQUE para jogar de novo':'ESPAÇO / CLIQUE para jogar de novo',LARGURA/2,ALTURA*0.72);
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+/* ══════════ CLIMA / NOITE ══════════ */
+function desenharClima(){
+  ctx.save();
+  for(const c of climaP){
+    if(c.t==='rain'){
+      ctx.strokeStyle='rgba(180,210,255,0.55)';
+      ctx.lineWidth=c.tam*ESCALA;
+      ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.lineTo(c.x-1.5*ESCALA,c.y+9*ESCALA); ctx.stroke();
+    } else if(c.t==='snow'){
+      ctx.fillStyle='rgba(255,250,240,0.75)';
+      ctx.beginPath(); ctx.arc(c.x,c.y,c.tam*ESCALA,0,Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+function desenharOverlayNoite(){
+  if(estado.tela!=='jogando'||isBossPhase()) return;
+  const prog=clamp(estado.faseTempo/FASE_DURACAO,0,1);
+  if(prog<0.6) return;
+  const a=(prog-0.6)/0.4*0.4;
+  ctx.save();
+  ctx.fillStyle=`rgba(10,15,40,${a})`;
+  ctx.fillRect(0,0,LARGURA,ALTURA);
+  ctx.restore();
+}
+
+/* ══════════ DESENHO PRINCIPAL ══════════ */
+function desenhar(){
+  const fase=faseAtual();
+
+  ctx.save();
+  if(estado.shake>0){
+    const s=estado.shake;
+    ctx.translate(rand(-s,s),rand(-s,s));
+  }
+
+  desenharCeu(fase);
+  for(const n of nuvens) desenharNuvem(n,fase);
+  desenharColinas(fase);
+  desenharDecoracao(fase);
+  desenharChao(fase);
+
+  if(isBossPhase()) desenharBoss();
+
+  for(const o of obstaculos) desenharObstaculo(o);
+  for(const d of drones)    desenharDrone(d);
+  for(const m of moedas)    desenharMoeda(m);
+  for(const p of powerUps)  desenharPowerUp(p);
+
+  desenharJogador();
+
+  for(const p of particulas){
+    ctx.globalAlpha=p.vida/p.vidaMax;
+    ctx.fillStyle=p.cor;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.tam*(p.vida/p.vidaMax),0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  desenharClima();
+  desenharOverlayNoite();
+  ctx.restore();
+
+  desenharHUD();
+  desenharBanner();
+  desenharBotoes();
+
+  if(estado.tela==='menu') desenharMenu();
+  else if(estado.tela==='fim') desenharFim();
+}
+
+/* ══════════ LOOP ══════════ */
+let ultimoTempo=performance.now();
+function loop(agora){
+  let dt=(agora-ultimoTempo)/(1000/60);
+  ultimoTempo=agora;
+  if(!isFinite(dt)||dt<0) dt=1;
+  dt=Math.min(dt,3);
+  /* pausa em modo retrato no touch */
+  if(isTouch && ALTURA>LARGURA){
+    requestAnimationFrame(loop);
+    return;
+  }
+  atualizar(dt);
+  desenhar();
+  requestAnimationFrame(loop);
+}
+
+/* ══════════ CONTROLES: TECLADO ══════════ */
+window.addEventListener('keydown',(e)=>{
+  if(['Space','ArrowUp','KeyW','ArrowDown','KeyS','KeyX','ShiftLeft','ShiftRight'].includes(e.code)){
+    e.preventDefault();
+  }
+  if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){
+    if(!e.repeat) pular();
+  }
+  if(e.code==='ArrowDown'||e.code==='KeyS') agachar(true);
+  if((e.code==='KeyX'||e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat){
+    dash();
+  }
+  /* teclas 1-5 para skins */
+  if(estado.tela==='menu'&&/^Digit[1-5]$/.test(e.code)){
+    const n=parseInt(e.code.slice(-1))-1;
+    if(n<SKINS.length){
+      if(skinsDesbloq.includes(n)){ skinAtual=n; salvar(); }
+      else if(SKINS[n].preco<=moedasTotais){
+        moedasTotais-=SKINS[n].preco;
+        skinsDesbloq.push(n);
+        skinAtual=n;
+        salvar();
+        SFX.power();
+      }
+    }
+  }
+},{passive:false});
+
+window.addEventListener('keyup',(e)=>{
+  if(e.code==='ArrowDown'||e.code==='KeyS') agachar(false);
+});
+
+/* ══════════ CONTROLES: TOQUE ══════════ */
+const toques = new Map(); // id -> 'pulo'|'dash'|'agacha'|null
+
+canvas.addEventListener('touchstart',(e)=>{
+  e.preventDefault();
+  initAudio();
+
+  for(const t of e.changedTouches){
+    const rect=canvas.getBoundingClientRect();
+    const x=(t.clientX-rect.left)/rect.width*LARGURA;
+    const y=(t.clientY-rect.top)/rect.height*ALTURA;
+
+    /* menu: clique em skins */
+    if(estado.tela==='menu'){
+      const sW=Math.min(100*ESCALA, LARGURA*0.105);
+      const sH=60*ESCALA;
+      const sGap=Math.min(12*ESCALA, LARGURA*0.008);
+      const sTot=SKINS.length*sW+(SKINS.length-1)*sGap;
+      const sX0=(LARGURA-sTot)/2;
+      const sY=ALTURA*0.54;
+      if(y>=sY && y<=sY+sH){
+        for(let i=0;i<SKINS.length;i++){
+          const sx=sX0+i*(sW+sGap);
+          if(x>=sx && x<=sx+sW){
+            if(skinsDesbloq.includes(i)){ skinAtual=i; salvar(); }
+            else if(SKINS[i].preco<=moedasTotais){
+              moedasTotais-=SKINS[i].preco;
+              skinsDesbloq.push(i);
+              skinAtual=i;
+              salvar();
+              SFX.power();
+            }
+            break;
+          }
+        }
+        continue;
+      }
+    }
+
+    /* botões virtuais */
+    const btn = pontoEmBotao(x,y);
+    if(btn){
+      btn.ativo = true;
+      toques.set(t.identifier, btn.tipo);
+      if(btn.tipo==='pulo') pular();
+      else if(btn.tipo==='dash') dash();
+      else if(btn.tipo==='agacha') agachar(true);
+    } else {
+      /* toque fora dos botões */
+      if(estado.tela==='menu' || estado.tela==='fim'){ pular(); continue; }
+      if(estado.tela==='jogando'){ pular(); continue; }
+    }
+  }
+},{passive:false});
+
+canvas.addEventListener('touchmove',(e)=>{ e.preventDefault(); },{passive:false});
+
+canvas.addEventListener('touchend',(e)=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    const tipo = toques.get(t.identifier);
+    if(tipo){
+      if(tipo==='agacha') agachar(false);
+      if(tipo==='pulo') botoes.pulo.ativo=false;
+      if(tipo==='dash') botoes.dash.ativo=false;
+      if(tipo==='agacha') botoes.agacha.ativo=false;
+    }
+    toques.delete(t.identifier);
+  }
+},{passive:false});
+
+canvas.addEventListener('touchcancel',(e)=>{
+  for(const t of e.changedTouches){
+    const tipo = toques.get(t.identifier);
+    if(tipo==='agacha') agachar(false);
+    toques.delete(t.identifier);
+  }
+  botoes.pulo.ativo=botoes.dash.ativo=botoes.agacha.ativo=false;
+});
+
+/* ══════════ CONTROLES: MOUSE (desktop) ══════════ */
+let mouseHoldTimer=null, mouseHoldCrouch=false;
+
+canvas.addEventListener('mousedown',(e)=>{
+  e.preventDefault();
+  initAudio();
+  if(e.button===2){ dash(); return; }  // botão direito = dash
+
+  /* botão esquerdo */
+  if(estado.tela==='menu'){
+    const rect=canvas.getBoundingClientRect();
+    const x=(e.clientX-rect.left)/rect.width*LARGURA;
+    const y=(e.clientY-rect.top)/rect.height*ALTURA;
+    /* clique em skin */
+    const sW=Math.min(100*ESCALA, LARGURA*0.105);
+    const sH=60*ESCALA;
+    const sGap=Math.min(12*ESCALA, LARGURA*0.008);
+    const sTot=SKINS.length*sW+(SKINS.length-1)*sGap;
+    const sX0=(LARGURA-sTot)/2;
+    const sY=ALTURA*0.54;
+    if(y>=sY && y<=sY+sH){
+      for(let i=0;i<SKINS.length;i++){
+        const sx=sX0+i*(sW+sGap);
+        if(x>=sx && x<=sx+sW){
+          if(skinsDesbloq.includes(i)){ skinAtual=i; salvar(); }
+          else if(SKINS[i].preco<=moedasTotais){
+            moedasTotais-=SKINS[i].preco;
+            skinsDesbloq.push(i);
+            skinAtual=i;
+            salvar();
+            SFX.power();
+          }
+          return;
+        }
+      }
+    }
+    pular();
+    return;
+  }
+
+  /* jogo: segurar por 200ms = agachar, senão pular */
+  mouseHoldCrouch = false;
+  mouseHoldTimer = setTimeout(()=>{
+    mouseHoldCrouch = true;
+    agachar(true);
+  }, 200);
+});
+
+canvas.addEventListener('mouseup',(e)=>{
+  if(e.button!==0) return;
+  if(mouseHoldTimer){
+    clearTimeout(mouseHoldTimer);
+    mouseHoldTimer=null;
+  }
+  if(mouseHoldCrouch){
+    agachar(false);
+    mouseHoldCrouch=false;
+  } else {
+    pular();
+  }
+});
+
+canvas.addEventListener('mouseleave',()=>{
+  if(mouseHoldTimer){ clearTimeout(mouseHoldTimer); mouseHoldTimer=null; }
+  if(mouseHoldCrouch){ agachar(false); mouseHoldCrouch=false; }
+});
+
+canvas.addEventListener('contextmenu',(e)=>e.preventDefault());
+
+/* ══════════ INICIAR ══════════ */
+resetJogador();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
